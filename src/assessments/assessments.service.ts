@@ -521,6 +521,7 @@ export class AssessmentsService {
     assessorId: string,
     assessmentId: string,
     pdfFile: Express.Multer.File,
+    pdfType: 'plant_health' | 'flowering',
   ): Promise<any> {
     // Validate assessment exists and belongs to assessor
     const assessment = await this.assessmentsRepository.findById(assessmentId);
@@ -537,6 +538,18 @@ export class AssessmentsService {
     // Validate file is PDF
     if (pdfFile.mimetype !== 'application/pdf') {
       throw new BadRequestException('Only PDF files are allowed');
+    }
+
+    // Validate PDF type
+    if (!['plant_health', 'flowering'].includes(pdfType)) {
+      throw new BadRequestException('PDF type must be either plant_health or flowering');
+    }
+
+    // Check if PDF of this type already exists
+    const existingPdfs = assessment.droneAnalysisPdfs || [];
+    const existingPdf = existingPdfs.find(pdf => pdf.pdfType === pdfType);
+    if (existingPdf) {
+      throw new BadRequestException(`A ${pdfType.replace('_', ' ')} PDF has already been uploaded for this assessment`);
     }
 
     // When using diskStorage, file.buffer is undefined - use file.path instead
@@ -558,7 +571,7 @@ export class AssessmentsService {
     // Generate unique filename
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 9);
-    const filename = `drone-${assessmentId}-${timestamp}-${randomStr}.pdf`;
+    const filename = `${pdfType}-${assessmentId}-${timestamp}-${randomStr}.pdf`;
     const filePath = path.join(uploadDir, filename);
 
     // Handle file based on storage type
@@ -584,13 +597,17 @@ export class AssessmentsService {
     const absoluteFilePath = path.resolve(filePath);
 
     // Call Python service to extract data
-    let extractedData = null;
+    let droneAnalysisData = null;
     try {
+      console.log(`Calling drone analysis service for: ${absoluteFilePath}`);
       const analysisResult = await this.droneAnalysisService.extractDroneData(
         absoluteFilePath,
       );
+      console.log('Drone analysis result:', analysisResult);
+      
       if (analysisResult.success && analysisResult.extractedData) {
-        extractedData = analysisResult.extractedData;
+        droneAnalysisData = analysisResult.extractedData;
+        console.log('Successfully extracted drone data');
       } else {
         // Log warning but continue - PDF is saved even if extraction fails
         console.warn(
@@ -604,19 +621,95 @@ export class AssessmentsService {
       );
     }
 
-    // Update assessment with PDF URL and extracted data
+    // Create new PDF entry
+    const newPdfEntry = {
+      pdfType,
+      pdfUrl,
+      droneAnalysisData,
+      uploadedAt: new Date(),
+    };
+
+    // Update assessment with new PDF in the array
+    const updatedPdfs = [...existingPdfs, newPdfEntry];
     const updatedAssessment = await this.assessmentsRepository.update(
       assessmentId,
       {
-        droneAnalysisPdfUrl: pdfUrl,
-        droneAnalysisData: extractedData,
+        droneAnalysisPdfs: updatedPdfs,
       },
     );
 
     return {
       assessmentId,
+      pdfType,
       pdfUrl,
-      extractedData,
+      droneAnalysisData,
+      assessment: updatedAssessment,
+    };
+  }
+
+  /**
+   * Get all uploaded PDFs for an assessment
+   */
+  async getUploadedPdfs(assessmentId: string): Promise<any> {
+    const assessment = await this.assessmentsRepository.findById(assessmentId);
+    if (!assessment) {
+      throw new NotFoundException('Assessment', assessmentId);
+    }
+
+    return assessment.droneAnalysisPdfs || [];
+  }
+
+  /**
+   * Delete a specific PDF from an assessment
+   */
+  async deletePdf(
+    assessorId: string,
+    assessmentId: string,
+    pdfType: 'plant_health' | 'flowering',
+  ): Promise<any> {
+    // Validate assessment exists and belongs to assessor
+    const assessment = await this.assessmentsRepository.findById(assessmentId);
+    if (!assessment) {
+      throw new NotFoundException('Assessment', assessmentId);
+    }
+
+    if (this.extractAssessorId(assessment.assessorId) !== assessorId) {
+      throw new BadRequestException(
+        'Assessment does not belong to this assessor',
+      );
+    }
+
+    const existingPdfs = assessment.droneAnalysisPdfs || [];
+    const pdfIndex = existingPdfs.findIndex(pdf => pdf.pdfType === pdfType);
+    
+    if (pdfIndex === -1) {
+      throw new BadRequestException(`No ${pdfType.replace('_', ' ')} PDF found for this assessment`);
+    }
+
+    // Remove file from filesystem
+    const fs = require('fs');
+    const path = require('path');
+    const pdfToDelete = existingPdfs[pdfIndex];
+    const filePath = path.join('.', pdfToDelete.pdfUrl);
+    
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    // Remove from array
+    const updatedPdfs = existingPdfs.filter(pdf => pdf.pdfType !== pdfType);
+    
+    const updatedAssessment = await this.assessmentsRepository.update(
+      assessmentId,
+      {
+        droneAnalysisPdfs: updatedPdfs,
+      },
+    );
+
+    return {
+      assessmentId,
+      pdfType,
+      message: `${pdfType.replace('_', ' ')} PDF deleted successfully`,
       assessment: updatedAssessment,
     };
   }
@@ -680,9 +773,24 @@ export class AssessmentsService {
       missingFields.push('Comprehensive assessment notes');
     }
 
-    // Drone analysis is optional but if uploaded, should have data
-    if (assessment.droneAnalysisPdfUrl && !assessment.droneAnalysisData) {
-      missingFields.push('Drone analysis data extraction (PDF uploaded but data not extracted)');
+    // Validate that both PDF types are uploaded
+    const uploadedPdfs = assessment.droneAnalysisPdfs || [];
+    const hasPlantHealth = uploadedPdfs.some(pdf => pdf.pdfType === 'plant_health');
+    const hasFlowering = uploadedPdfs.some(pdf => pdf.pdfType === 'flowering');
+
+    if (!hasPlantHealth) {
+      missingFields.push('Plant health PDF');
+    }
+
+    if (!hasFlowering) {
+      missingFields.push('Flowering PDF');
+    }
+
+    // Check if any uploaded PDFs have extraction failures
+    const pdfsWithoutData = uploadedPdfs.filter(pdf => !pdf.droneAnalysisData);
+    if (pdfsWithoutData.length > 0) {
+      const pdfTypes = pdfsWithoutData.map(pdf => pdf.pdfType.replace('_', ' ')).join(', ');
+      missingFields.push(`Data extraction for ${pdfTypes} PDF(s)`);
     }
 
     if (missingFields.length > 0) {
@@ -734,7 +842,7 @@ export class AssessmentsService {
         eosdaFieldId: farm.eosdaFieldId,
         status: farm.status,
       },
-      droneAnalysisData: assessment.droneAnalysisData || null,
+      droneAnalysisPdfs: assessment.droneAnalysisPdfs || [],
       comprehensiveNotes: assessment.comprehensiveNotes,
       weatherData: weatherData || null,
       metadata: {

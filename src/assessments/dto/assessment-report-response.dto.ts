@@ -7,8 +7,18 @@ export class AssessmentReportResponseDto {
   @ApiProperty({ description: 'Farm details' })
   farmDetails: any;
 
-  @ApiProperty({ description: 'Drone analysis data extracted from PDF', required: false })
-  droneAnalysisData?: any;
+  @ApiProperty({ 
+    description: 'Array of uploaded drone analysis PDFs with their extracted data',
+    type: 'array',
+    isArray: true,
+    required: false
+  })
+  droneAnalysisPdfs?: {
+    pdfType: 'plant_health' | 'flowering';
+    pdfUrl: string;
+    droneAnalysisData?: object;
+    uploadedAt: Date;
+  }[];
 
   @ApiProperty({ description: 'Comprehensive assessment notes' })
   comprehensiveNotes: string;

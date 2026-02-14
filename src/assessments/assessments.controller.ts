@@ -3,11 +3,16 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -16,6 +21,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiConsumes,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -29,6 +35,7 @@ import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { UpdateAssessmentDto } from './dto/update-assessment.dto';
 import { AssignAssessorDto } from './dto/assign-assessor.dto';
 import { RejectAssessmentDto } from './dto/reject-assessment.dto';
+import { UploadDroneAnalysisDto, PdfType } from './dto/upload-drone-analysis.dto';
 import { UuidValidationPipe } from '../common/pipes/uuid-validation.pipe';
 
 @ApiTags('Assessments')
@@ -162,27 +169,61 @@ export class AssessmentsController {
       limits: {
         fileSize: 10 * 1024 * 1024, // 10MB
       },
-      fileFilter: (req, file, cb) => {
-        if (file.mimetype === 'application/pdf') {
-          cb(null, true);
-        } else {
-          cb(new Error('Only PDF files are allowed'), false);
-        }
-      },
     }),
   )
+  @UsePipes(new ValidationPipe({ transform: true }))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload drone analysis PDF (Assessor only)' })
   @ApiResponse({ status: 200 })
+  @ApiQuery({ name: 'pdfType', enum: PdfType, required: true, description: 'Type of PDF being uploaded' })
   async uploadDronePdf(
     @CurrentUser() user: any,
     @Param('id', UuidValidationPipe) id: string,
     @UploadedFile() file: Express.Multer.File,
+    @Query('pdfType') pdfType: PdfType,
   ) {
+    // Validate file exists
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    console.log('File received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      path: file.path,
+      buffer: file.buffer ? 'has buffer' : 'no buffer'
+    });
+
     return this.assessmentsService.uploadDroneAnalysis(
       user.userId,
       id,
       file,
+      pdfType,
+    );
+  }
+
+  @Get(':id/pdfs')
+  @ApiOperation({ summary: 'Get all uploaded PDFs for an assessment' })
+  @ApiResponse({ status: 200 })
+  async getUploadedPdfs(@Param('id', UuidValidationPipe) id: string) {
+    return this.assessmentsService.getUploadedPdfs(id);
+  }
+
+  @Delete(':id/pdfs/:pdfType')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ASSESSOR)
+  @ApiOperation({ summary: 'Delete a specific PDF from an assessment (Assessor only)' })
+  @ApiResponse({ status: 200 })
+  async deletePdf(
+    @CurrentUser() user: any,
+    @Param('id', UuidValidationPipe) id: string,
+    @Param('pdfType') pdfType: PdfType,
+  ) {
+    return this.assessmentsService.deletePdf(
+      user.userId,
+      id,
+      pdfType,
     );
   }
 

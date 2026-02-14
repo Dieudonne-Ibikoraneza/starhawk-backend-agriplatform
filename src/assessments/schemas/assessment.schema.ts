@@ -30,11 +30,18 @@ export class Assessment {
   @Prop({ type: String })
   reportText?: string;
 
-  @Prop({ type: String })
-  droneAnalysisPdfUrl?: string; // Path to uploaded drone PDF
-
-  @Prop({ type: Object })
-  droneAnalysisData?: object; // Extracted data from Python service
+  @Prop({ type: [{
+    pdfType: { type: String, enum: ['plant_health', 'flowering'], required: true },
+    pdfUrl: { type: String, required: true },
+    droneAnalysisData: { type: Object },
+    uploadedAt: { type: Date, default: Date.now }
+  }] })
+  droneAnalysisPdfs?: {
+    pdfType: 'plant_health' | 'flowering';
+    pdfUrl: string;
+    droneAnalysisData?: object;
+    uploadedAt: Date;
+  }[];
 
   @Prop({ type: String })
   comprehensiveNotes?: string; // Comprehensive assessment notes
