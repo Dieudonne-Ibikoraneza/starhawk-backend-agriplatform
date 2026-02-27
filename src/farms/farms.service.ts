@@ -164,7 +164,11 @@ export class FarmsService {
       coordinates: centroid,
     };
 
-    // Create EOSDA field with geometry, crop type, and sowing date
+    // Create EOSDA field with geometry, crop type, and sowing date.
+    // IMPORTANT: If EOSDA fails (e.g. requests limit exceeded), we still
+    // proceed with updating the farm so that KML upload completes and
+    // the farm moves out of PENDING status. EOSDA-dependent analytics
+    // will later validate the presence of eosdaFieldId and fail gracefully.
     let eosdaFieldId: string | undefined;
     let eosdaArea: string | undefined;
     try {
@@ -183,11 +187,14 @@ export class FarmsService {
       );
     } catch (error: any) {
       this.logger.error(
-        `Failed to create EOSDA field: ${error.message}. Farm update aborted.`,
+        `Failed to create EOSDA field: ${error.message}. Proceeding without EOSDA field ID; farm will still be updated with KML geometry.`,
       );
-      throw new BadRequestException(
-        `Failed to create EOSDA field: ${error.message}. Please ensure EOSDA API is configured correctly.`,
-      );
+      // We intentionally do NOT throw here so that KML upload still
+      // registers the farm and updates its geometry/status. Downstream
+      // EOSDA features that require eosdaFieldId will perform their
+      // own checks and return appropriate errors.
+      eosdaFieldId = undefined;
+      eosdaArea = undefined;
     }
 
     // Update farm with geometry, name, and EOSDA field ID
@@ -690,9 +697,27 @@ export class FarmsService {
   }
 
   private mapToFarmResponse(farm: any): FarmResponseDto {
+    // Handle farmerId - could be an ObjectId or a populated User object
+    let farmerIdValue: string;
+    let farmerName: string | undefined;
+    
+    if (farm.farmerId && typeof farm.farmerId === 'object') {
+      // It's a populated User object, extract the _id and name
+      farmerIdValue = farm.farmerId._id?.toString() || farm.farmerId.toString();
+      // Build farmer name from firstName and lastName
+      const firstName = farm.farmerId.firstName || '';
+      const lastName = farm.farmerId.lastName || '';
+      const fullName = `${firstName} ${lastName}`.trim();
+      farmerName = fullName || undefined;
+    } else {
+      // It's an ObjectId
+      farmerIdValue = farm.farmerId?.toString() || '';
+    }
+
     const response = {
       id: farm._id.toString(),
-      farmerId: farm.farmerId.toString(),
+      farmerId: farmerIdValue,
+      farmerName: farmerName,
       name: farm.name,
       area: farm.area,
       cropType: farm.cropType,

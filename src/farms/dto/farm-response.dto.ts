@@ -9,6 +9,9 @@ export class FarmResponseDto {
   @ApiProperty()
   farmerId: string;
 
+  @ApiProperty({ required: false })
+  farmerName?: string;
+
   @ApiProperty()
   name: string;
 
