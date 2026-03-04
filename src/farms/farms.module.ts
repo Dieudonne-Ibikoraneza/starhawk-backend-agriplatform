@@ -1,10 +1,12 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { HttpModule } from '@nestjs/axios';
 import { FarmsController } from './farms.controller';
 import { FarmsService } from './farms.service';
 import { FarmsRepository } from './farms.repository';
 import { InsuranceRequestsRepository } from './insurance-requests.repository';
 import { ShapefileParserService } from './services/shapefile-parser.service';
+import { LocationService } from './services/location.service';
 import { EosdaModule } from '../eosda/eosda.module';
 import { AssessmentsModule } from '../assessments/assessments.module';
 import { EmailModule } from '../email/email.module';
@@ -25,6 +27,7 @@ import {
     forwardRef(() => AssessmentsModule),
     EmailModule,
     UsersModule,
+    HttpModule,
   ],
   controllers: [FarmsController],
   providers: [
@@ -32,6 +35,7 @@ import {
     FarmsRepository,
     InsuranceRequestsRepository,
     ShapefileParserService,
+    LocationService,
   ],
   exports: [FarmsService, FarmsRepository],
 })

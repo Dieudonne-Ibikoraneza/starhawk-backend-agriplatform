@@ -9,6 +9,7 @@ import { Types } from 'mongoose';
 import { FarmsRepository } from './farms.repository';
 import { InsuranceRequestsRepository } from './insurance-requests.repository';
 import { ShapefileParserService } from './services/shapefile-parser.service';
+import { LocationService } from './services/location.service';
 import { EosdaService } from '../eosda/eosda.service';
 import { AssessmentsService } from '../assessments/assessments.service';
 import { EmailService } from '../email/email.service';
@@ -28,6 +29,7 @@ export class FarmsService {
     private farmsRepository: FarmsRepository,
     private insuranceRequestsRepository: InsuranceRequestsRepository,
     private shapefileParser: ShapefileParserService,
+    private locationService: LocationService,
     private eosdaService: EosdaService,
     private assessmentsService: AssessmentsService,
     private emailService: EmailService,
@@ -39,10 +41,7 @@ export class FarmsService {
    * This is called by farmers to register a farm without geometry
    * The farm will be in PENDING status until an assessor uploads the KML file
    */
-  async createSimple(
-    farmerId: string,
-    createDto: CreateFarmSimpleDto,
-  ): Promise<FarmResponseDto> {
+  async createSimple(farmerId: string, createDto: CreateFarmSimpleDto): Promise<FarmResponseDto> {
     // Validate sowing date
     const sowingDate = new Date(createDto.sowingDate);
     if (isNaN(sowingDate.getTime())) {
@@ -101,7 +100,7 @@ export class FarmsService {
               createDto.sowingDate,
               (farm._id as any).toString(),
             )
-            .catch((error) => {
+            .catch(error => {
               this.logger.error(
                 `Failed to send farm registration notification to admin ${admin.email}: ${error.message}`,
               );
@@ -142,15 +141,10 @@ export class FarmsService {
     }
 
     // Validate assessor is assigned to this specific farm
-    const isAssigned = await this.assessmentsService.isAssessorAssignedToFarm(
-      assessorId,
-      farmId,
-    );
+    const isAssigned = await this.assessmentsService.isAssessorAssignedToFarm(assessorId, farmId);
 
     if (!isAssigned) {
-      throw new ForbiddenException(
-        'You are not assigned to assess this farm',
-      );
+      throw new ForbiddenException('You are not assigned to assess this farm');
     }
 
     // Parse KML to get boundary
@@ -224,10 +218,7 @@ export class FarmsService {
   // These methods are kept for backward compatibility but should not be used
   // Use createSimple() and uploadKMLForFarm() instead
 
-  async create(
-    farmerId: string,
-    createFarmDto: CreateFarmDto,
-  ): Promise<FarmResponseDto> {
+  async create(farmerId: string, createFarmDto: CreateFarmDto): Promise<FarmResponseDto> {
     // Validate geometry
     this.validateGeometry(createFarmDto.boundary);
 
@@ -235,9 +226,7 @@ export class FarmsService {
     const area = this.shapefileParser.calculateArea(createFarmDto.boundary);
 
     // Ensure location matches boundary centroid
-    const centroid = this.shapefileParser.calculateCentroid(
-      createFarmDto.boundary,
-    );
+    const centroid = this.shapefileParser.calculateCentroid(createFarmDto.boundary);
     const location = {
       type: 'Point' as const,
       coordinates: centroid,
@@ -252,11 +241,11 @@ export class FarmsService {
         createFarmDto.boundary,
         createFarmDto.cropType,
       );
-      
+
       // Extract EOSDA field ID (can be number or string)
       eosdaFieldId = eosdaField.id.toString();
       eosdaArea = eosdaField.area;
-      
+
       this.logger.log(
         `✅ EOSDA field created successfully - Field ID: ${eosdaFieldId}, Area: ${eosdaArea} hectares`,
       );
@@ -285,25 +274,17 @@ export class FarmsService {
     };
 
     const farm = await this.farmsRepository.create(farmData);
-    
+
     this.logger.log(
       `✅ Farm created successfully - Farm ID: ${farm._id}, EOSDA Field ID: ${eosdaFieldId}`,
     );
     this.logger.log(
       `   EOSDA field ID ${eosdaFieldId} is now stored in farm record and will be used for:`,
     );
-    this.logger.log(
-      `   - Field Analytics (NDVI, statistics)`,
-    );
-    this.logger.log(
-      `   - Field Imagery (satellite imagery)`,
-    );
-    this.logger.log(
-      `   - Weather Data (forecasts, historical)`,
-    );
-    this.logger.log(
-      `   - Ongoing Monitoring (alerts, thresholds)`,
-    );
+    this.logger.log(`   - Field Analytics (NDVI, statistics)`);
+    this.logger.log(`   - Field Imagery (satellite imagery)`);
+    this.logger.log(`   - Weather Data (forecasts, historical)`);
+    this.logger.log(`   - Ongoing Monitoring (alerts, thresholds)`);
 
     return this.mapToFarmResponse(farm);
   }
@@ -326,11 +307,11 @@ export class FarmsService {
     let eosdaArea: string | undefined;
     try {
       const eosdaField = await this.createEosdaField(name, boundary, cropType);
-      
+
       // Extract EOSDA field ID (can be number or string)
       eosdaFieldId = eosdaField.id.toString();
       eosdaArea = eosdaField.area;
-      
+
       this.logger.log(
         `✅ EOSDA field created successfully - Field ID: ${eosdaFieldId}, Area: ${eosdaArea} hectares`,
       );
@@ -362,11 +343,11 @@ export class FarmsService {
     };
 
     const farm = await this.farmsRepository.create(farmData);
-    
+
     this.logger.log(
       `✅ Farm created successfully - Farm ID: ${farm._id}, EOSDA Field ID: ${eosdaFieldId}`,
     );
-    
+
     return this.mapToFarmResponse(farm);
   }
 
@@ -388,11 +369,11 @@ export class FarmsService {
     let eosdaArea: string | undefined;
     try {
       const eosdaField = await this.createEosdaField(name, boundary, cropType);
-      
+
       // Extract EOSDA field ID (can be number or string)
       eosdaFieldId = eosdaField.id.toString();
       eosdaArea = eosdaField.area;
-      
+
       this.logger.log(
         `✅ EOSDA field created successfully - Field ID: ${eosdaFieldId}, Area: ${eosdaArea} hectares`,
       );
@@ -424,11 +405,11 @@ export class FarmsService {
     };
 
     const farm = await this.farmsRepository.create(farmData);
-    
+
     this.logger.log(
       `✅ Farm created successfully - Farm ID: ${farm._id}, EOSDA Field ID: ${eosdaFieldId}`,
     );
-    
+
     return this.mapToFarmResponse(farm);
   }
 
@@ -436,7 +417,7 @@ export class FarmsService {
    * Create EOSDA field and return the response
    * This is called BEFORE creating the farm in MongoDB
    * If this fails, farm creation is aborted
-   * 
+   *
    * Returns the EOSDA field response containing:
    * - id: Field ID (number or string) - MUST be stored for subsequent API calls
    * - area: Calculated area in hectares (string format)
@@ -474,18 +455,12 @@ export class FarmsService {
       sowingDate: sowingDateStr,
     });
 
-    this.logger.debug(
-      `EOSDA API Response received: id=${eosdaField.id}, area=${eosdaField.area}`,
-    );
+    this.logger.debug(`EOSDA API Response received: id=${eosdaField.id}, area=${eosdaField.area}`);
 
     return eosdaField;
   }
 
-  async findAll(
-    farmerId?: string,
-    page: number = 0,
-    limit: number = 10,
-  ): Promise<any> {
+  async findAll(farmerId?: string, page: number = 0, limit: number = 10): Promise<any> {
     // Convert farmerId string to ObjectId for MongoDB query
     const filters: any = {};
     if (farmerId) {
@@ -499,20 +474,34 @@ export class FarmsService {
     if (!farm) {
       throw new NotFoundException('Farm', id);
     }
-    
+
     // Log EOSDA field ID if available
     if (farm.eosdaFieldId) {
-      this.logger.debug(
-        `Retrieved farm ${id} with EOSDA field ID: ${farm.eosdaFieldId}`,
-      );
+      this.logger.debug(`Retrieved farm ${id} with EOSDA field ID: ${farm.eosdaFieldId}`);
     }
+
+    // Get location name from coordinates
+    let locationName: string | undefined;
+    if (farm.location && farm.location.coordinates && farm.location.coordinates.length >= 2) {
+      const longitude = farm.location.coordinates[0];
+      const latitude = farm.location.coordinates[1];
+      try {
+        locationName = await this.locationService.getLocationString(latitude, longitude);
+      } catch (err: any) {
+        this.logger.warn(`Failed to get location name: ${err.message}`);
+      }
+    }
+
+    // Build response with location name
+    const response = this.mapToFarmResponse(farm);
+    response.locationName = locationName;
     
-    return this.mapToFarmResponse(farm);
+    return response;
   }
 
   async findByFarmerId(farmerId: string): Promise<FarmResponseDto[]> {
     const farms = await this.farmsRepository.findByFarmerId(farmerId);
-    return farms.map((farm) => this.mapToFarmResponse(farm));
+    return farms.map(farm => this.mapToFarmResponse(farm));
   }
 
   async update(id: string, updateData: Partial<CreateFarmDto>) {
@@ -524,9 +513,7 @@ export class FarmsService {
     if (updateData.boundary) {
       this.validateGeometry(updateData.boundary);
       const area = this.shapefileParser.calculateArea(updateData.boundary);
-      const centroid = this.shapefileParser.calculateCentroid(
-        updateData.boundary,
-      );
+      const centroid = this.shapefileParser.calculateCentroid(updateData.boundary);
       updateData.location = {
         type: 'Point',
         coordinates: centroid,
@@ -539,17 +526,12 @@ export class FarmsService {
     // If boundary was updated and EOSDA field exists, update it in EOSDA
     if (updateData.boundary && updatedFarm?.eosdaFieldId) {
       try {
-        this.logger.log(
-          `Updating EOSDA field ${updatedFarm.eosdaFieldId} for farm ${id}`,
-        );
-        await this.eosdaService.fieldManagement.updateField(
-          updatedFarm.eosdaFieldId,
-          {
-            geometry: updateData.boundary,
-            ...(updateData.name && { name: updateData.name }),
-            ...(updateData.cropType && { cropType: updateData.cropType }),
-          },
-        );
+        this.logger.log(`Updating EOSDA field ${updatedFarm.eosdaFieldId} for farm ${id}`);
+        await this.eosdaService.fieldManagement.updateField(updatedFarm.eosdaFieldId, {
+          geometry: updateData.boundary,
+          ...(updateData.name && { name: updateData.name }),
+          ...(updateData.cropType && { cropType: updateData.cropType }),
+        });
         this.logger.log(
           `Successfully updated EOSDA field ${updatedFarm.eosdaFieldId} for farm ${id}`,
         );
@@ -564,11 +546,7 @@ export class FarmsService {
     return this.mapToFarmResponse(updatedFarm!);
   }
 
-  async createInsuranceRequest(
-    farmerId: string,
-    farmId: string,
-    notes?: string,
-  ) {
+  async createInsuranceRequest(farmerId: string, farmId: string, notes?: string) {
     // Validate farmId is provided
     if (!farmId || farmId.trim() === '') {
       throw new BadRequestException('Farm ID is required');
@@ -583,7 +561,7 @@ export class FarmsService {
     // Note: farmsRepository.findById() populates farmerId, so we get a User object
     // We need to extract the _id from the populated object, or use the ObjectId if not populated
     let farmFarmerId: string;
-    
+
     if (farm.farmerId instanceof Types.ObjectId) {
       // Not populated - direct ObjectId
       farmFarmerId = farm.farmerId.toString();
@@ -596,7 +574,7 @@ export class FarmsService {
       // Fallback: convert to string
       farmFarmerId = String(farm.farmerId).trim();
     }
-    
+
     const normalizedFarmerId = String(farmerId).trim();
 
     this.logger.debug(
@@ -614,14 +592,10 @@ export class FarmsService {
     const existingRequests = await this.insuranceRequestsRepository.findByStatus(
       InsuranceRequestStatus.PENDING,
     );
-    const hasExistingRequest = existingRequests.some(
-      (req) => req.farmId.toString() === farmId,
-    );
+    const hasExistingRequest = existingRequests.some(req => req.farmId.toString() === farmId);
 
     if (hasExistingRequest) {
-      throw new BadRequestException(
-        'An insurance request already exists for this farm',
-      );
+      throw new BadRequestException('An insurance request already exists for this farm');
     }
 
     const request = await this.insuranceRequestsRepository.create({
@@ -645,29 +619,31 @@ export class FarmsService {
       this.logger.debug(`Found ${requests.length} insurance requests for farmer ${farmerId}`);
       return requests;
     }
-    
+
     if (insurerId) {
       // Insurer sees requests assigned to them OR all pending requests (unassigned)
       // First, get requests assigned to this insurer
       const assignedRequests = await this.insuranceRequestsRepository.findByInsurerId(insurerId);
-      
+
       // Also get all pending requests (for assigning to insurers)
       const pendingRequests = await this.insuranceRequestsRepository.findByStatus(
         InsuranceRequestStatus.PENDING,
       );
-      
+
       // Combine and deduplicate (in case a request is both assigned and pending - shouldn't happen but be safe)
       const allRequests = [...assignedRequests, ...pendingRequests];
       const uniqueRequests = Array.from(
-        new Map(allRequests.map((req) => [(req as any)._id?.toString() || req.id || String(req), req])).values()
+        new Map(
+          allRequests.map(req => [(req as any)._id?.toString() || req.id || String(req), req]),
+        ).values(),
       );
-      
+
       this.logger.debug(
         `Found ${assignedRequests.length} assigned and ${pendingRequests.length} pending requests for insurer ${insurerId}`,
       );
       return uniqueRequests;
     }
-    
+
     // No specific user - return all pending requests (admin or public access)
     const requests = await this.insuranceRequestsRepository.findByStatus(
       InsuranceRequestStatus.PENDING,
@@ -681,13 +657,8 @@ export class FarmsService {
       throw new BadRequestException('Invalid boundary geometry');
     }
 
-    if (
-      boundary.type !== 'Polygon' &&
-      boundary.type !== 'MultiPolygon'
-    ) {
-      throw new BadRequestException(
-        'Boundary must be a Polygon or MultiPolygon',
-      );
+    if (boundary.type !== 'Polygon' && boundary.type !== 'MultiPolygon') {
+      throw new BadRequestException('Boundary must be a Polygon or MultiPolygon');
     }
 
     // Basic validation: check if coordinates are valid
@@ -700,7 +671,7 @@ export class FarmsService {
     // Handle farmerId - could be an ObjectId or a populated User object
     let farmerIdValue: string;
     let farmerName: string | undefined;
-    
+
     if (farm.farmerId && typeof farm.farmerId === 'object') {
       // It's a populated User object, extract the _id and name
       farmerIdValue = farm.farmerId._id?.toString() || farm.farmerId.toString();
@@ -714,6 +685,26 @@ export class FarmsService {
       farmerIdValue = farm.farmerId?.toString() || '';
     }
 
+    // Get location name from coordinates if available
+    let locationName: string | undefined;
+    if (farm.location && farm.location.coordinates && farm.location.coordinates.length >= 2) {
+      // Coordinates are [longitude, latitude]
+      const longitude = farm.location.coordinates[0];
+      const latitude = farm.location.coordinates[1];
+      // Get location name synchronously (will be cached internally)
+      // Note: This is a simplified approach - in production you might want to cache this
+      this.locationService
+        .getLocationString(latitude, longitude)
+        .then(name => {
+          if (name) {
+            locationName = name;
+          }
+        })
+        .catch(err => {
+          this.logger.warn(`Failed to get location name: ${err.message}`);
+        });
+    }
+
     const response = {
       id: farm._id.toString(),
       farmerId: farmerIdValue,
@@ -722,6 +713,7 @@ export class FarmsService {
       area: farm.area,
       cropType: farm.cropType,
       location: farm.location,
+      locationName: locationName,
       boundary: farm.boundary,
       status: farm.status,
       shapefilePath: farm.shapefilePath,
@@ -732,9 +724,7 @@ export class FarmsService {
 
     // Log if EOSDA field ID is present
     if (response.eosdaFieldId) {
-      this.logger.debug(
-        `Farm response includes EOSDA field ID: ${response.eosdaFieldId}`,
-      );
+      this.logger.debug(`Farm response includes EOSDA field ID: ${response.eosdaFieldId}`);
     }
 
     return response;
@@ -763,11 +753,7 @@ export class FarmsService {
    * Get weather forecast for a farm
    * Uses farm's eosdaFieldId if available, otherwise boundary geometry
    */
-  async getWeatherForecast(
-    farmId: string,
-    dateStart: string,
-    dateEnd: string,
-  ) {
+  async getWeatherForecast(farmId: string, dateStart: string, dateEnd: string) {
     const farm = await this.getFarmForAnalytics(farmId);
 
     if (!farm.eosdaFieldId) {
@@ -786,11 +772,7 @@ export class FarmsService {
   /**
    * Get historical weather data for a farm
    */
-  async getHistoricalWeather(
-    farmId: string,
-    dateStart: string,
-    dateEnd: string,
-  ) {
+  async getHistoricalWeather(farmId: string, dateStart: string, dateEnd: string) {
     const farm = await this.getFarmForAnalytics(farmId);
 
     if (!farm.eosdaFieldId) {
@@ -855,8 +837,7 @@ export class FarmsService {
       indices: indices || ['NDVI', 'MSAVI', 'NDMI', 'EVI'],
       sensors: sensors || ['sentinel2'],
       limit: limit || 100,
-      excludeCoverPixels:
-        excludeCoverPixels !== undefined ? excludeCoverPixels : true,
+      excludeCoverPixels: excludeCoverPixels !== undefined ? excludeCoverPixels : true,
       cloudMaskingLevel: cloudMaskingLevel || 'best',
     };
 
@@ -874,11 +855,7 @@ export class FarmsService {
    * Get NDVI time series for a farm
    * Convenience method that uses getIndicesStatistics with NDVI only
    */
-  async getNDVITimeSeries(
-    farmId: string,
-    dateStart: string,
-    dateEnd: string,
-  ) {
+  async getNDVITimeSeries(farmId: string, dateStart: string, dateEnd: string) {
     const farm = await this.getFarmForAnalytics(farmId);
 
     const request: any = {

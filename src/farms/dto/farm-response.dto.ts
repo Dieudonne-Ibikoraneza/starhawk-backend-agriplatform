@@ -27,6 +27,9 @@ export class FarmResponseDto {
     coordinates: [number, number];
   };
 
+  @ApiProperty({ required: false })
+  locationName?: string;
+
   @ApiProperty()
   boundary: {
     type: 'Polygon' | 'MultiPolygon';
