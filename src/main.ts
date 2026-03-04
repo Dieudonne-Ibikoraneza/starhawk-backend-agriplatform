@@ -15,7 +15,7 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: true,
+      forbidNonWhitelisted: false, // Disable for file uploads compatibility
       transform: true,
       transformOptions: {
         enableImplicitConversion: true,
@@ -48,4 +48,3 @@ async function bootstrap() {
 }
 
 bootstrap();
-

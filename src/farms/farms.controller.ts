@@ -34,7 +34,7 @@ import { UploadFarmKmlDto } from './dto/upload-farm-kml.dto';
 import { FarmResponseDto } from './dto/farm-response.dto';
 import { CreateInsuranceRequestDto } from './dto/create-insurance-request.dto';
 import { UuidValidationPipe } from '../common/pipes/uuid-validation.pipe';
-import { diskStorage } from 'multer';
+import { diskStorage, memoryStorage } from 'multer';
 import { extname } from 'path';
 
 @ApiTags('Farms')
@@ -47,7 +47,9 @@ export class FarmsController {
   @Post('register')
   @UseGuards(RolesGuard)
   @Roles(Role.FARMER)
-  @ApiOperation({ summary: 'Register a new farm (Farmer only) - provides crop type and sowing date' })
+  @ApiOperation({
+    summary: 'Register a new farm (Farmer only) - provides crop type and sowing date',
+  })
   @ApiResponse({ status: 201, type: FarmResponseDto })
   async register(
     @CurrentUser() user: any,
@@ -61,34 +63,19 @@ export class FarmsController {
   @Roles(Role.ASSESSOR)
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: './uploads/kml',
-        filename: (req, file, cb) => {
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          cb(null, `${randomName}${extname(file.originalname)}`);
-        },
-      }),
+      storage: memoryStorage(),
       limits: {
         fileSize: 1048576, // 1MB
       },
       fileFilter: (req, file, cb) => {
-        const allowedMimeTypes = [
-          'application/vnd.google-earth.kml+xml',
-          'application/xml',
-          'text/xml',
-          'text/plain',
-        ];
         const allowedExtensions = ['.kml'];
-        
-        const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
-        const hasValidExtension = allowedExtensions.some(ext => 
-          file.originalname.toLowerCase().endsWith(ext)
+
+        // Only check extension (most reliable way to identify KML files)
+        const hasValidExtension = allowedExtensions.some(ext =>
+          file.originalname.toLowerCase().endsWith(ext),
         );
 
-        if (hasValidMimeType || hasValidExtension) {
+        if (hasValidExtension) {
           cb(null, true);
         } else {
           cb(new Error('Only KML files (.kml) are allowed'), false);
@@ -97,7 +84,9 @@ export class FarmsController {
     }),
   )
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload KML file for a farm (Assessor only) - completes farm registration' })
+  @ApiOperation({
+    summary: 'Upload KML file for a farm (Assessor only) - completes farm registration',
+  })
   @ApiResponse({ status: 200, type: FarmResponseDto })
   async uploadKMLForFarm(
     @CurrentUser() user: any,
@@ -109,26 +98,16 @@ export class FarmsController {
       throw new BadRequestException('No KML file uploaded');
     }
 
-    const fs = require('fs');
-    const fileBuffer = fs.readFileSync(file.path);
-
     try {
       const farm = await this.farmsService.uploadKMLForFarm(
         user.userId,
         farmId,
         uploadDto.name,
-        fileBuffer,
+        file.buffer,
       );
-
-      // Clean up uploaded file
-      fs.unlinkSync(file.path);
 
       return farm;
     } catch (error) {
-      // Clean up uploaded file on error
-      if (fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
-      }
       throw error;
     }
   }
@@ -167,11 +146,7 @@ export class FarmsController {
     @CurrentUser() user: any,
     @Body() createDto: CreateInsuranceRequestDto,
   ) {
-    return this.farmsService.createInsuranceRequest(
-      user.userId,
-      createDto.farmId,
-      createDto.notes,
-    );
+    return this.farmsService.createInsuranceRequest(user.userId, createDto.farmId, createDto.notes);
   }
 
   // Farm Analytics Endpoints - Must come before :id route
@@ -180,7 +155,11 @@ export class FarmsController {
   @Get(':id/weather/forecast')
   @ApiOperation({ summary: 'Get weather forecast for a farm' })
   @ApiQuery({ name: 'dateStart', required: true, description: 'Start date (YYYY-MM-DD)' })
-  @ApiQuery({ name: 'dateEnd', required: true, description: 'End date (YYYY-MM-DD), max 14 days ahead' })
+  @ApiQuery({
+    name: 'dateEnd',
+    required: true,
+    description: 'End date (YYYY-MM-DD), max 14 days ahead',
+  })
   @ApiResponse({ status: 200, description: 'Weather forecast data' })
   async getWeatherForecast(
     @Param('id', UuidValidationPipe) id: string,
@@ -207,8 +186,16 @@ export class FarmsController {
   @ApiOperation({ summary: 'Get accumulated weather data (GDD, seasonal analysis) for a farm' })
   @ApiQuery({ name: 'dateStart', required: true, description: 'Start date (YYYY-MM-DD)' })
   @ApiQuery({ name: 'dateEnd', required: true, description: 'End date (YYYY-MM-DD)' })
-  @ApiQuery({ name: 'sumOfActiveTemperatures', required: false, description: 'Base temperature for GDD (default: 10)' })
-  @ApiQuery({ name: 'provider', required: false, description: 'Weather provider (default: weather-online)' })
+  @ApiQuery({
+    name: 'sumOfActiveTemperatures',
+    required: false,
+    description: 'Base temperature for GDD (default: 10)',
+  })
+  @ApiQuery({
+    name: 'provider',
+    required: false,
+    description: 'Weather provider (default: weather-online)',
+  })
   @ApiResponse({ status: 200, description: 'Accumulated weather statistics' })
   async getAccumulatedWeather(
     @Param('id', UuidValidationPipe) id: string,
@@ -227,14 +214,33 @@ export class FarmsController {
   }
 
   @Get(':id/indices/statistics')
-  @ApiOperation({ summary: 'Get vegetation indices statistics (NDVI, MSAVI, NDMI, EVI) for a farm' })
+  @ApiOperation({
+    summary: 'Get vegetation indices statistics (NDVI, MSAVI, NDMI, EVI) for a farm',
+  })
   @ApiQuery({ name: 'dateStart', required: true, description: 'Start date (YYYY-MM-DD)' })
   @ApiQuery({ name: 'dateEnd', required: true, description: 'End date (YYYY-MM-DD)' })
-  @ApiQuery({ name: 'indices', required: false, description: 'Comma-separated list of indices (NDVI,MSAVI,NDMI,EVI)' })
-  @ApiQuery({ name: 'sensors', required: false, description: 'Comma-separated list of sensors (sentinel2,sentinel1)' })
+  @ApiQuery({
+    name: 'indices',
+    required: false,
+    description: 'Comma-separated list of indices (NDVI,MSAVI,NDMI,EVI)',
+  })
+  @ApiQuery({
+    name: 'sensors',
+    required: false,
+    description: 'Comma-separated list of sensors (sentinel2,sentinel1)',
+  })
   @ApiQuery({ name: 'limit', required: false, description: 'Max data points (default: 100)' })
-  @ApiQuery({ name: 'excludeCoverPixels', required: false, description: 'Exclude clouds (default: true)' })
-  @ApiQuery({ name: 'cloudMaskingLevel', required: false, enum: ['best', 'normal', 'basic'], description: 'Cloud masking level (default: best)' })
+  @ApiQuery({
+    name: 'excludeCoverPixels',
+    required: false,
+    description: 'Exclude clouds (default: true)',
+  })
+  @ApiQuery({
+    name: 'cloudMaskingLevel',
+    required: false,
+    enum: ['best', 'normal', 'basic'],
+    description: 'Cloud masking level (default: best)',
+  })
   @ApiResponse({ status: 200, description: 'Vegetation indices statistics' })
   async getIndicesStatistics(
     @Param('id', UuidValidationPipe) id: string,
@@ -250,12 +256,15 @@ export class FarmsController {
     const sensorsArray = sensors
       ? (sensors.split(',') as ('sentinel2' | 'sentinel1')[])
       : undefined;
-    
+
     // Parse boolean query parameter (can be string 'true'/'false' or boolean)
-    const excludeCoverPixelsParsed = excludeCoverPixels === undefined 
-      ? undefined 
-      : excludeCoverPixels === true || excludeCoverPixels === 'true' || excludeCoverPixels === '1';
-    
+    const excludeCoverPixelsParsed =
+      excludeCoverPixels === undefined
+        ? undefined
+        : excludeCoverPixels === true ||
+          excludeCoverPixels === 'true' ||
+          excludeCoverPixels === '1';
+
     return this.farmsService.getIndicesStatistics(
       id,
       dateStart,
@@ -285,8 +294,18 @@ export class FarmsController {
   @ApiOperation({ summary: 'Get field trend (NDVI or other index over time) for a farm' })
   @ApiQuery({ name: 'dateStart', required: true, description: 'Start date (YYYY-MM-DD)' })
   @ApiQuery({ name: 'dateEnd', required: true, description: 'End date (YYYY-MM-DD)' })
-  @ApiQuery({ name: 'index', required: false, enum: ['NDVI', 'MSAVI', 'NDMI', 'EVI'], description: 'Index type (default: NDVI)' })
-  @ApiQuery({ name: 'dataSource', required: false, enum: ['S2', 'S1'], description: 'Data source (default: S2)' })
+  @ApiQuery({
+    name: 'index',
+    required: false,
+    enum: ['NDVI', 'MSAVI', 'NDMI', 'EVI'],
+    description: 'Index type (default: NDVI)',
+  })
+  @ApiQuery({
+    name: 'dataSource',
+    required: false,
+    enum: ['S2', 'S1'],
+    description: 'Data source (default: S2)',
+  })
   @ApiResponse({ status: 200, description: 'Field trend data' })
   async getFieldTrend(
     @Param('id', UuidValidationPipe) id: string,
@@ -301,9 +320,7 @@ export class FarmsController {
   @Get(':id')
   @ApiOperation({ summary: 'Get farm by ID' })
   @ApiResponse({ status: 200, type: FarmResponseDto })
-  async findById(
-    @Param('id', UuidValidationPipe) id: string,
-  ): Promise<FarmResponseDto> {
+  async findById(@Param('id', UuidValidationPipe) id: string): Promise<FarmResponseDto> {
     return this.farmsService.findById(id);
   }
 
@@ -317,4 +334,3 @@ export class FarmsController {
     return this.farmsService.update(id, updateData);
   }
 }
-

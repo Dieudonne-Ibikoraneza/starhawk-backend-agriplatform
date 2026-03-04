@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HttpModule } from '@nestjs/axios';
+import { MulterModule } from '@nestjs/platform-express';
 import { FarmsController } from './farms.controller';
 import { FarmsService } from './farms.service';
 import { FarmsRepository } from './farms.repository';
@@ -19,6 +20,11 @@ import {
 
 @Module({
   imports: [
+    MulterModule.register({
+      limits: {
+        fileSize: 1048576, // 1MB
+      },
+    }),
     MongooseModule.forFeature([
       { name: Farm.name, schema: FarmSchema },
       { name: InsuranceRequest.name, schema: InsuranceRequestSchema },

@@ -33,6 +33,7 @@ export class LocationService {
         lon: longitude,
         format: 'json',
         addressdetails: 1,
+        'accept-language': 'en',
       };
 
       const response = await firstValueFrom(
