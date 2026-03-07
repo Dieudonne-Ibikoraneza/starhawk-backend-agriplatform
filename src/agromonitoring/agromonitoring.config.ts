@@ -18,16 +18,14 @@ export class AgromonitoringConfig implements OnModuleInit {
     this.apiKey =
       this.configService.get<string>('AGROMONITORING_API_KEY') ||
       process.env.AGROMONITORING_API_KEY ||
-      '2899fb272d1128ba9da8deb6c11a8771'; // User provided API key
+      '2899fb272d1128ba9da8deb6c11a8771'; // AGROmonitoring API key (working one)
 
     this.logger.debug(
       `AGROmonitoring Config initialized: URL=${this.apiUrl}, API Key=${this.apiKey ? `${this.apiKey.substring(0, 8)}...` : 'NOT SET'}`,
     );
 
     if (!this.apiKey || this.apiKey.trim() === '') {
-      this.logger.warn(
-        'AGROMONITORING_API_KEY is empty. Please check your configuration.',
-      );
+      this.logger.warn('AGROMONITORING_API_KEY is empty. Please check your configuration.');
     }
   }
 
@@ -58,9 +56,7 @@ export class AgromonitoringConfig implements OnModuleInit {
    */
   getHeaders(): Record<string, string> {
     if (!this.apiKey || this.apiKey.trim() === '') {
-      this.logger.error(
-        'AGROmonitoring API key is not configured. Requests will fail.',
-      );
+      this.logger.error('AGROmonitoring API key is not configured. Requests will fail.');
     }
     return {
       'x-api-key': this.apiKey,
@@ -73,7 +69,7 @@ export class AgromonitoringConfig implements OnModuleInit {
    */
   getQueryParams(): Record<string, string> {
     return {
-      'appid': this.apiKey,
+      appid: this.apiKey,
     };
   }
 }
